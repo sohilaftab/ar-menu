@@ -13,7 +13,7 @@ const s3 = new S3Client({
 });
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.SUPABASE_POOLER_URL, 
   ssl: { rejectUnauthorized: false },
 });
 
