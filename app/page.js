@@ -1,75 +1,38 @@
-"use client";
-import { useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
 
-export default function Dashboard() {
-  const [dishName, setDishName] = useState("");
-  const [file, setFile] = useState(null);
-  const [qrLink, setQrLink] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    // Package the file and name into FormData
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("dishName", dishName);
-
-    // Send to our backend API
+  try {
+    // 1. Ask the Next.js backend for an S3 upload ticket
     const res = await fetch("/api/upload", {
       method: "POST",
-      body: formData,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, dishName }),
     });
     
     const data = await res.json();
+    
     if (data.success) {
-      // Create the final URL the QR code will point to
-      setQrLink(`${window.location.origin}/menu/${data.dishId}`);
+      // 2. Upload the heavy file DIRECTLY to AWS S3 using the ticket (bypassing Vercel's limit)
+      const uploadRes = await fetch(data.presignedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": "model/gltf-binary" },
+      });
+
+      if (uploadRes.ok) {
+        // 3. Generate the QR code if the S3 upload succeeded
+        setQrLink(`${window.location.origin}/menu/${data.dishId}`);
+      } else {
+        alert("Failed to upload to S3 directly.");
+      }
     } else {
-      alert("Upload failed!");
+      alert("Failed to get upload ticket from server.");
     }
-    setLoading(false);
-  };
-
-  return (
-    <div className="min-h-screen flex flex-col items-center p-10 font-sans">
-      <h1 className="text-3xl font-bold mb-8">Upload 3D Menu Item</h1>
-      
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full max-w-sm">
-        <input 
-          type="text" 
-          placeholder="Enter Dish Name" 
-          className="border p-2 rounded text-black"
-          onChange={e => setDishName(e.target.value)} 
-          required 
-        />
-        <input 
-          type="file" 
-          accept=".glb" 
-          className="border p-2 rounded"
-          onChange={e => setFile(e.target.files[0])} 
-          required 
-        />
-        <button 
-          type="submit" 
-          disabled={loading}
-          className="bg-blue-600 text-white p-3 rounded font-bold hover:bg-blue-700 disabled:bg-gray-400"
-        >
-          {loading ? "Uploading to S3..." : "Upload & Generate QR"}
-        </button>
-      </form>
-
-      {qrLink && (
-        <div className="mt-12 flex flex-col items-center bg-white p-6 rounded shadow-lg text-black">
-          <h3 className="text-xl mb-4 font-bold">Print this QR Code:</h3>
-          <QRCodeSVG value={qrLink} size={250} />
-          <p className="mt-4 text-blue-600 underline">
-            <a href={qrLink} target="_blank" rel="noreferrer">Open Customer View</a>
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
+  } catch (error) {
+    console.error("Upload error:", error);
+    alert("An error occurred during upload.");
+  }
+  
+  setLoading(false);
+};
