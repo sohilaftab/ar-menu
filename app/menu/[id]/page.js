@@ -1,56 +1,45 @@
-import { Pool } from "pg";
 import Script from "next/script";
+import { Pool } from "pg";
 
-export default async function CustomerARView({ params }) {
-  // 1. AWAIT THE PARAMS (Required for the latest Next.js versions)
-  const resolvedParams = await params;
-  const dishId = resolvedParams.id;
+const pool = new Pool({
+  connectionString: process.env.SUPABASE_POOLER_URL,
+  ssl: { rejectUnauthorized: false },
+});
 
-  // 2. Configure the database with SSL to support Supabase
-  const pool = new Pool({ 
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
-  });
+// Update the type signature if using TypeScript, or simply await params in JS
+export default async function DishViewer({ params }) {
+  // Await the params Promise (Required for Next.js 15+)
+  const { id } = await params;
   
-  // 3. Fetch the dish using the resolved ID
-  const dbRes = await pool.query(
-      "SELECT * FROM menu_items WHERE id = $1", 
-      [dishId]
-  );
+  // Fetch the dish from your database
+  const dbRes = await pool.query("SELECT * FROM menu_items WHERE id = $1", [id]);
+  
+  if (dbRes.rowCount === 0) {
+    return <h1 style={{ textAlign: "center", marginTop: "50px" }}>Dish not found</h1>;
+  }
+  
   const dish = dbRes.rows[0];
 
-  if (!dish) return <h1 className="text-center mt-20 text-2xl">Dish not found</h1>;
-
   return (
-    <div className="w-screen h-screen flex flex-col bg-gray-100">
-      <Script 
-        type="module" 
-        src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js" 
-      />
+    <div style={{ width: "100vw", height: "100vh", backgroundColor: "#f9f9f9" }}>
+      <h2 style={{ textAlign: "center", padding: "20px 0" }}>{dish.dish_name}</h2>
       
-      <div className="p-4 bg-white shadow-md z-10 text-center">
-        <h1 className="text-2xl font-bold text-gray-800">{dish.dish_name}</h1>
-      </div>
+      {/* Load Google's 3D/AR engine */}
+      <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></Script>
       
-      <div className="flex-grow relative">
-        <model-viewer
-          src={dish.model_url}
-          alt={dish.dish_name}
-          ar
-          ar-modes="webxr scene-viewer quick-look"
-          camera-controls
-          auto-rotate
-          shadow-intensity="1"
-          style={{ width: "100%", height: "100%", backgroundColor: "#f3f4f6" }}
-        >
-          <button 
-            slot="ar-button" 
-            className="absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full font-bold shadow-lg text-lg"
-          >
-            📷 View on your table
-          </button>
-        </model-viewer>
-      </div>
+      <model-viewer
+        src={dish.model_url}
+        ar
+        ar-modes="webxr scene-viewer quick-look"
+        camera-controls
+        auto-rotate
+        style={{ width: "100%", height: "70vh" }}
+      >
+        {/* The button that pops up asking to use the phone camera */}
+        <button slot="ar-button" style={{ backgroundColor: "#0070f3", color: "white", borderRadius: "8px", border: "none", position: "absolute", bottom: "16px", right: "16px", padding: "12px 24px", fontWeight: "bold" }}>
+          📷 View on your table
+        </button>
+      </model-viewer>
     </div>
   );
 }
