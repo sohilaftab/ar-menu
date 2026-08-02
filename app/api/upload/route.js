@@ -3,7 +3,13 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Pool } from "pg";
 import { NextResponse } from "next/server";
 
-// Explicitly pass AWS credentials from process.env
+// 1. Explicitly check if the variable exists before trying to connect
+const dbUrl = process.env.SUPABASE_POOLER_URL;
+
+if (!dbUrl) {
+  console.error("CRITICAL ERROR: SUPABASE_POOLER_URL is undefined!");
+}
+
 const s3 = new S3Client({
   region: process.env.AWS_REGION || "ap-south-1",
   credentials: {
@@ -13,12 +19,16 @@ const s3 = new S3Client({
 });
 
 const pool = new Pool({
-  connectionString: process.env.SUPABASE_POOLER_URL, 
+  connectionString: dbUrl,
   ssl: { rejectUnauthorized: false },
 });
 
 export async function POST(req) {
   try {
+    if (!dbUrl) {
+      throw new Error("Missing Database URL in Vercel settings.");
+    }
+
     const { filename, dishName } = await req.json();
 
     if (!filename || !dishName) {
@@ -29,7 +39,6 @@ export async function POST(req) {
     const safeFilename = filename.replace(/\s+/g, "-");
     const fileKey = `models/${uniqueTimestamp}-${safeFilename}`;
 
-    // 1. Generate S3 Pre-signed URL
     const command = new PutObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET_NAME,
       Key: fileKey,
@@ -39,7 +48,6 @@ export async function POST(req) {
     const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 60 });
     const s3Url = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
 
-    // 2. Save entry to PostgreSQL Database
     const dbRes = await pool.query(
       "INSERT INTO menu_items (dish_name, model_url) VALUES ($1, $2) RETURNING id",
       [dishName, s3Url]
@@ -52,7 +60,6 @@ export async function POST(req) {
     });
   } catch (error) {
     console.error("SERVER UPLOAD ERROR:", error);
-    // Returning error message in response JSON helps diagnose missing env vars
     return NextResponse.json(
       { error: error.message || "Internal Server Error" },
       { status: 500 }
